@@ -1,6 +1,6 @@
 Data_num = 100; % 假定统计数据数量
 
-% 假定输入数据矩阵
+% 假定输入数据矩阵(无实际数据，随机数取值)
 s1 = rand(1, Data_num); 
 s2 = rand(1, Data_num);
 d1 = rand(1, Data_num);
@@ -99,6 +99,12 @@ disp(R);
 disp('R2');
 disp(STATS(1));
 
-%灰度模型
+%灰度模型构建GM（1，1）
+[range_1,u1_1,u2_1,xt_1,yuce_1,epsilon_1,delta_1,rho_1]=GM(s1);
+[range_2,u1_2,u2_2,xt_2,yuce_2,epsilon_2,delta_2,rho_2]=GM(s2);
+[range_3,u1_3,u2_3,xt_3,yuce_3,epsilon_3,delta_3,rho_3]=GM(d1);
+[range_4,u1_4,u2_4,xt_4,yuce_4,epsilon_4,delta_4,rho_4]=GM(d2);
+[range_5,u1_5,u2_5,xt_5,yuce_5,epsilon_5,delta_5,rho_5]=GM(d3);
 
+%模型耦合+优化
 
