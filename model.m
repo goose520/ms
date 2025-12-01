@@ -1,12 +1,25 @@
-Data_num = 10; % 假定统计数据数量
+% 假定数据数量
+Data_num = 12;
 
-% 假定输入数据矩阵(无实际数据，随机数取值)
-s1 = zeros(1, Data_num); s1(:) = [4200 4150 4100 4050 4000 3950 3900 3850 3800 3750];
-s2 = zeros(1, Data_num); s2(:) = [50 55 60 65 70 75 80 85 90 95];
-d1 = zeros(1, Data_num); d1(:) = [60 61 61 62 62 63 63 64 64 65];
-d2 = zeros(1, Data_num); d2(:) = [150 148 145 143 140 138 135 133 130 128];
-d3 = zeros(1, Data_num); d3(:) = [0.8 0.82 0.85 0.9 0.95 1.0 1.02 1.03 1.01 1.00];
-cwssi = zeros(Data_num,1); cwssi(:) = [0.35,0.245371102,0.198983311,0.12044137,0.091444884,0.012902942,-0.042180501,-0.155505051,-0.245371102,-0.376086957];
+% 实际输入数据矩阵
+s1 = zeros(1, Data_num); 
+s1(:) = [2041.499, 2027.779, 2013.929, 2001.064, 1989.434, 1978.308, 1966.804, 1957.695, 1951.570, 1948.101, 1947.791, 1949.670];
+
+s2 = zeros(1, Data_num); 
+s2(:) = [7.17, 7.02, 8.30, 9.14, 9.30, 8.16, 8.15, 9.27, 8.19, 10.70, 10.58, 10.58];
+
+d1 = zeros(1, Data_num); 
+d1(:) = [56.784, 52.047, 53.188, 54.039, 55.616, 67.160, 69.248, 73.118, 77.047, 80.257, 80.244, 80.322];
+
+d2 = zeros(1, Data_num); 
+d2(:) = [18660, 18056, 17742, 16786, 16425, 16140, 15777, 15404, 14825, 11418, 9047, 8996];
+
+d3 = zeros(1, Data_num); 
+d3(:) = [1391242.343, 1400655.332, 1410287.993, 1419354.592, 1427652.016, 1435681.095, 1444079.121, 1450798.227, 1455351.282, 1457942.854, 1458174.603, 1456769.951];
+
+cwssi = zeros(Data_num,1); 
+cwssi(:) = [0.146, 0.134, 0.141, 0.167, 0.176, -0.046, -0.064, -0.129, -0.236, 0.036, 0.040, 0.037];
+
 % 引入初始数据（略）
 % 标准化
 s1_dat = (s1 - min(s1)) / (max(s1) - min(s1));
@@ -25,12 +38,6 @@ data_total = [s1_dat; s2_dat; d1_dat; d2_dat; d3_dat]';
 disp('特征值:');
 disp(latent);
 
-% 筛选特征值大于 1 的主成分（Kaiser准则）
-kaiser_criteria = latent > 1;
-
-% 获取符合Kaiser准则的主成分数量
-num_kaiser = sum(kaiser_criteria);
-disp(['符合特征值 > 1 的主成分数量: ', num2str(num_kaiser)]);
 
 % 累计方差贡献率
 cumulative_explained = cumsum(explained);
@@ -41,20 +48,11 @@ disp(cumulative_explained);
 num_components_85 = find(cumulative_explained >= 85, 1);
 disp(['根据累计方差贡献率≥85%，选择的主成分数量: ', num2str(num_components_85)]);
 
-% 处理特殊情况：Kaiser准则和累计方差贡献率不一致时
-if num_kaiser ~= num_components_85
-    disp('警告: Kaiser准则和累计方差贡献率≥85%的主成分选择数量不一致。');
-    disp(['符合Kaiser准则的主成分数量: ', num2str(num_kaiser)]);
-    disp(['根据累计方差贡献率≥85%选择的主成分数量: ', num2str(num_components_85)]);
-    disp('为确保选择的主成分符合两个标准，选择最小的主成分数量。');
-end
 
-% 确保选择的主成分数量不超过符合Kaiser准则的数量
-num_components_final = min(num_components_85, num_kaiser);
+num_components_final = num_components_85;
 
-% 筛选符合条件的主成分
-kaiser_selected_coeff = coeff(:, kaiser_criteria);
-selected_coeff = kaiser_selected_coeff(:, 1:num_components_final);
+% 筛选符合条件的主成分（仅用累计贡献率≥85%）
+selected_coeff = coeff(:, 1:num_components_final);
 
 % 提取对应的主成分得分
 selected_score = score(:, 1:num_components_final);
@@ -90,7 +88,6 @@ disp(D_total);
 total_data=[S_total,D_total];
 
 %构建线性回归模型CWSSI=α×Stotal+β×Dtotal+ε
-cwssi=zeros(Data_num,1);
 [B, BINT, R, RINT, STATS]=mvregress(total_data,cwssi);
 %B1α，B2β，Re
 disp('系数α，β为');
@@ -113,12 +110,12 @@ disp(STATS(1));
 years = (1:Data_num)';
 
 % ------------- 1) 若已有观测CWSSI则使用，否则生成示例观测（便于演示） -------------
-if exist('cwssi_obs','var') && length(cwssi_obs)==Data_num
-    cwssi_obs = cwssi_obs(:);
-    disp('使用输入的真实 cwssi_obs 作为观测序列。');
+if exist('cwssi','var') && length(cwssi)==Data_num
+    cwssi = cwssi(:);
+    disp('使用输入的真实 cwssi作为观测序列。');
 else
     % 如果没有真实观测，生成一个示例观测：用线性组合 + 噪声
-    disp('未找到 cwssi_obs（观测值）。脚本将生成示例 cwssi_obs 用于演示。请用真实观测替换。');
+    disp('未找到 cwssi（观测值）。脚本将生成示例 cwssi 用于演示。请用真实观测替换。');
     % 先用全局回归（若 B 已计算成功，则用 B，否则随机权重）
     try
         B_global = B; % 来自之前 mvregress 计算（可能失败）
@@ -126,19 +123,19 @@ else
         B_global = [0.5; -0.3;]; % 占位
     end
     % 生成观测 = B(1)*S_total + B(2)*D_total + 高斯噪声
-    cwssi_obs = B_global(1)*S_total + B_global(2)*D_total + 0.05*randn(Data_num,1);
+    cwssi = B_global(1)*S_total + B_global(2)*D_total + 0.05*randn(Data_num,1);
 end
 
 % ------------- 2) 全局回归（若之前mvregress可用则结果已在 B 中） -------------
 % 为健壮性，使用增广设计矩阵含常数项做普通最小二乘回归（OLS）
 X = [S_total, D_total, ones(Data_num,1)];
-B_ols = X\cwssi_obs;  % [alpha; beta; intercept]
+B_ols = X\cwssi;  % [alpha; beta; intercept]
 cwssi_pred_global = X * B_ols;
 
 % 计算全局回归残差与R2
-res_global = cwssi_obs - cwssi_pred_global;
+res_global = cwssi - cwssi_pred_global;
 SS_res = sum(res_global.^2);
-SS_tot = sum((cwssi_obs - mean(cwssi_obs)).^2);
+SS_tot = sum((cwssi - mean(cwssi)).^2);
 R2_global = 1 - SS_res/SS_tot;
 
 disp('全局 OLS 回归系数 [alpha; beta; intercept]：');
@@ -165,7 +162,7 @@ for k = 1:num_clusters
         continue;
     end
     Xk = [S_total(idx_k), D_total(idx_k), ones(length(idx_k),1)];
-    yk = cwssi_obs(idx_k);
+    yk = cwssi(idx_k);
     bk = Xk\yk;
     B_cluster(:,k) = bk;
     yk_pred = Xk*bk;
@@ -215,7 +212,7 @@ end
 epsilon_combined = mean(epsilon_mat,2);
 
 % 计算回归残差（使用簇化回归预测作为基准）
-res_clustered = cwssi_obs - cwssi_pred_bycluster;
+res_clustered = cwssi - cwssi_pred_bycluster;
 
 % 用 epsilon_combined 去拟合 res_clustered 的二次多项式： res = p*epsilon^2 + q*epsilon + r
 % 注意：polyfit 的自变量为 epsilon_combined，因变量为 res_clustered
@@ -226,8 +223,8 @@ f_epsilon = polyval(p_coeffs, epsilon_combined);
 cwssi_corrected = cwssi_pred_bycluster + f_epsilon;
 
 % ------------- 5) 评估修正效果 -------------
-res_after = cwssi_obs - cwssi_corrected;
-R2_after = 1 - sum(res_after.^2)/sum((cwssi_obs - mean(cwssi_obs)).^2);
+res_after = cwssi - cwssi_corrected;
+R2_after = 1 - sum(res_after.^2)/sum((cwssi - mean(cwssi)).^2);
 
 disp('误差修正多项式系数 [p q r] = ');
 disp(p_coeffs);
@@ -236,7 +233,7 @@ disp(['修正后 R^2 = ', num2str(R2_after)]);
 
 % ------------- 6) 可视化：CWSSI 时间变化曲线（原始、回归预测、修正后） -------------
 figure('Name','CWSSI 时间变化曲线','NumberTitle','off');
-plot(years, cwssi_obs, '-o', 'LineWidth',1.5); hold on;
+plot(years, cwssi, '-o', 'LineWidth',1.5); hold on;
 plot(years, cwssi_pred_global, '--', 'LineWidth',1.2);
 plot(years, cwssi_pred_bycluster, '-.', 'LineWidth',1.2);
 plot(years, cwssi_corrected, ':', 'LineWidth',1.8);
@@ -247,7 +244,7 @@ title('CWSSI 时间变化：观测 vs 预测 vs 修正');
 grid on;
 
 % ------------- 7) （可选）输出每年所用簇与对应系数、修正项 -------------
-results_table = table(years, cluster_idx, S_total, D_total, cwssi_obs, cwssi_pred_bycluster, f_epsilon, cwssi_corrected, ...
+results_table = table(years, cluster_idx, S_total, D_total, cwssi, cwssi_pred_bycluster, f_epsilon, cwssi_corrected, ...
     'VariableNames', {'Year','Cluster','S_total','D_total','CWSSI_obs','CWSSI_pred_cluster','Correction_f_eps','CWSSI_corrected'});
 disp('前 10 行 结果示例：');
 disp(results_table(1:min(10,end),:));

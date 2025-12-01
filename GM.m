@@ -1,5 +1,6 @@
 function [range,u1,u2,xt,yuce,epsilon,delta,rho]=GM(x0)
 n=length(x0);
+x0 = x0(:);  % 强制为列向量，避免维度错误
 lamda=x0(1:n-1)./x0(2:n);
 range=minmax(lamda');%级比范围
 x1=cumsum(x0);
