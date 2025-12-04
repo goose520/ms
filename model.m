@@ -1,3 +1,4 @@
+clc,clear;
 % 假定数据数量
 Data_num = 12;
 
@@ -257,3 +258,235 @@ disp(cluster_coeffs_readable);
 
 % 保存结果（如需要）
 % save('CWSSI_results.mat','results_table','B_ols','B_cluster','p_coeffs','R2_global','R2_after');
+
+%% ========= 生成未来20年（原始量纲）预测 S1_pre ~ D3_pre =========
+
+future_years = 20;
+
+% 建立未来时间 t
+n_old = length(s1);
+t_future = (n_old : n_old + future_years - 1)';
+
+% GM(1,1) 的预测公式：xt(t) = (s(1) - b/a)*exp(-a*(t-1)) + b/a
+GM_predict = @(a,b,first,x) (first - b/a) * exp(-a*(x-1)) + b/a;
+
+% ------------ S1 ----------
+a = double(u1_1); 
+b = double(u2_1); 
+S1_pre = GM_predict(a,b,s1(1), t_future);
+
+% ------------ S2 ----------
+a = double(u1_2); 
+b = double(u2_2); 
+S2_pre = GM_predict(a,b,s2(1), t_future);
+
+% ------------ D1 ----------
+a = double(u1_3); 
+b = double(u2_3); 
+D1_pre = GM_predict(a,b,d1(1), t_future);
+
+% ------------ D2 ----------
+a = double(u1_4); 
+b = double(u2_4); 
+D2_pre = GM_predict(a,b,d2(1), t_future);
+
+% ------------ D3 ----------
+a = double(u1_5); 
+b = double(u2_5); 
+D3_pre = GM_predict(a,b,d3(1), t_future);
+
+fprintf("未来 20 年预测完成：S1_pre, S2_pre, D1_pre, D2_pre, D3_pre 已生成。\n");
+
+%% ================== 未来20年 CWSSI_pre 与 WS_pre 计算 ===================
+
+% 合并未来预测数据（原始量纲）
+future_data = [S1_pre S2_pre D1_pre D2_pre D3_pre];
+
+%% ======== 用历史 min/max 定义 amin/amax，并把 future_data 标准化（修复 amin 未定义错误） ========
+% 假定 future_data 已经是 (future_len x 5) 格式： [S1_pre S2_pre D1_pre D2_pre D3_pre]
+% 如果你尚未生成 S1_pre..D3_pre，请先运行 GM 预测段生成它们。
+
+% --- 1) 计算历史 min/max （与脚本前面标准化一致）
+amin = [ min(s1), min(s2), min(d1), min(d2), min(d3) ];  % 1x5
+amax = [ max(s1), max(s2), max(d1), max(d2), max(d3) ];  % 1x5
+
+% 检查是否有相等的 max 和 min（避免除以零）
+zero_range = (amax - amin) == 0;
+if any(zero_range)
+    warning('Some variable(s) have zero range (max==min). Those columns will be left as zeros after normalization.');
+    amax(zero_range) = amin(zero_range) + eps; % 避免除零
+end
+
+% --- 2) 标准化 future_data（按列 min-max，与历史口径一致）
+% future_data 应为 (future_len x 5)
+s_data_f = (future_data - amin) ./ (amax - amin);   % MATLAB 自动广播： (N x 5) - (1 x 5)
+
+% --- 3) 将 future 标准化数据中心化并投影到 PCA（使用历史的 mu 和 coeff）
+% 注意：pca 返回的 score = (data_centered) * coeff，且 mu 是历史样本均值（1x5）
+if exist('mu','var') && exist('coeff','var')
+    % mu is 1x5 (mean of historical standardized variables used in pca)
+    % BUT 注意：你前面把 PCA 用在 data_total（已经是标准化过的），并把 mu 返回
+    % 所以这里应先用与 PCA 相同的标准化口径（s_data_f），再减去 mu，然后乘 coeff。
+    data_centered_f = s_data_f - mu;  % (future_len x 5) - (1 x 5)
+    score_f = data_centered_f * coeff; % (future_len x 5) * (5 x 5) -> (future_len x 5)
+else
+    error('缺少 PCA 输出变量 coeff 或 mu：请先运行 PCA（[coeff,score,latent,tsquared,explained,mu]=pca(data_total)）');
+end
+
+% --- 4) 按照你历史脚本里相同的“供给/需求合成”方法计算 S_total_f, D_total_f
+% （为保持一致性，这里沿用你原来的逐主成分加权求和方式）
+future_len = size(score_f,1);
+S_total_f = zeros(future_len,1);
+D_total_f = zeros(future_len,1);
+
+for i = 1:num_components_final
+    % 注意：coeff(j,i) 是第 j 个原始变量在第 i 个主成分上的载荷
+    % score_f(:,i) 是未来样本在主成分 i 上的得分（列向量）
+    S_total_f = S_total_f + coeff(1,i) * score_f(:,i); % s1
+    S_total_f = S_total_f + coeff(2,i) * score_f(:,i); % s2
+
+    D_total_f = D_total_f + coeff(3,i) * score_f(:,i); % d1
+    D_total_f = D_total_f + coeff(4,i) * score_f(:,i); % d2
+    D_total_f = D_total_f + coeff(5,i) * score_f(:,i); % d3
+end
+
+% --- 5) 用历史训练得到的回归系数 B_ols 预测 CWSSI_pre（确保 B_ols 已存在）
+if exist('B_ols','var')
+    X_fut = [S_total_f, D_total_f, ones(future_len,1)]; % (future_len x 3)
+    CWSSI_pre = X_fut * B_ols;  % (future_len x 1)
+else
+    warning('未找到 B_ols（OLS 回归系数）。将尝试使用之前 mvregress 的 B（如果有）或给出 NaN。');
+    if exist('B','var') && numel(B)>=2
+        Btemp = B;
+        if length(Btemp)==2 % mvregress 有时返回 2系数 (无截距)
+            CWSSI_pre = Btemp(1)*S_total_f + Btemp(2)*D_total_f;
+        else
+            CWSSI_pre = nan(future_len,1);
+        end
+    else
+        CWSSI_pre = nan(future_len,1);
+    end
+end
+
+% 如需将 CWSSI 约束到 [0,1]
+CWSSI_pre = max(min(CWSSI_pre,1),0);
+
+% --- 6) 计算 WS_pre（供需比），这里定义为 D_total_f ./ S_total_f *100（%）
+% 如果你有“总取水量”（TotalWithdrawal），可以改为 TotalWithdrawal ./ S1_pre *100
+WS_pre = nan(future_len,1);
+zero_mask = (S_total_f ~= 0);
+WS_pre(zero_mask) = (D_total_f(zero_mask) ./ S_total_f(zero_mask)) * 100;
+WS_pre(~zero_mask) = NaN;  % 无法计算的放 NaN
+
+% --- 7) 将生成的未来时间向量与结果绑定（可选）
+future_years_vec = (max(years)+1 : max(years)+future_len)';
+% 输出提示
+fprintf('已生成 %d 年预测：CWSSI_pre (len=%d) 与 WS_pre (len=%d)。\n', future_len, length(CWSSI_pre), length(WS_pre));
+
+
+% ② 做 PCA —— 必须使用历史样本的 coeff，而不能重新训练！
+score_f = s_data_f * coeff;
+
+% ③ 取前两个主成分
+X1_fut = score_f(:,1);
+Y1_fut = score_f(:,2);
+
+
+%% ====== 若 sy/ux/uw/a2/b2/ intercept 未定义则自动用历史数据最小二乘估计 ======
+% 需要历史变量： score (历史主成分得分), S_total, D_total, B_ols (或 B)
+if ~exist('score','var')
+    error('缺少历史主成分得分变量 score（PCA 输出）。请先运行 PCA 部分。');
+end
+
+% 历史主成分第一列/第二列
+X1_hist = score(:,1);
+Y1_hist = score(:,2);
+
+% 估计 sy：最小二乘拟合 S_total ≈ X1_hist - sy * Y1_hist
+if ~exist('sy','var')
+    if exist('S_total','var')
+        denom = (Y1_hist'*Y1_hist);
+        if denom == 0
+            warning('Y1_hist 全为0，不能估计 sy；将 sy 置为 0。');
+            sy = 0;
+        else
+            sy = - (Y1_hist' * (S_total - X1_hist)) / denom;
+        end
+        fprintf('已估计 sy = %.6g\n', sy);
+    else
+        warning('无法估计 sy：缺少历史 S_total。将 sy 置为 0。');
+        sy = 0;
+    end
+end
+
+% 估计 ux, uw：最小二乘拟合 -D_total ≈ [X1_hist Y1_hist] * [ux; uw]
+if ~(exist('ux','var') && exist('uw','var'))
+    if exist('D_total','var')
+        A = [X1_hist, Y1_hist];           % n x 2
+        b = -D_total;                     % n x 1
+        % 如果 A 的列近似线性相关，\ 仍给最小二乘解
+        params = A \ b;                   % 2x1
+        if length(params) == 2
+            ux = params(1);
+            uw = params(2);
+            fprintf('已估计 ux = %.6g, uw = %.6g\n', ux, uw);
+        else
+            warning('估计 ux,uw 失败，置为零。');
+            ux = 0; uw = 0;
+        end
+    else
+        warning('无法估计 ux/uw：缺少历史 D_total。将 ux,uw 置为 0。');
+        ux = 0; uw = 0;
+    end
+end
+
+% 估计 a2,b2,intercept：优先使用已存在的 B_ols（[alpha; beta; intercept]）
+if ~exist('a2','var') || ~exist('b2','var') || ~exist('intercept','var')
+    if exist('B_ols','var') && numel(B_ols)>=3
+        a2 = B_ols(1);
+        b2 = B_ols(2);
+        intercept = B_ols(3);
+        fprintf('已采用 B_ols 中的回归系数 a2=%.6g, b2=%.6g, intercept=%.6g\n', a2, b2, intercept);
+    elseif exist('B','var') && numel(B)>=2
+        % B 可能是不含截距的 mvregress 输出
+        if numel(B) == 2
+            a2 = B(1); b2 = B(2); intercept = 0;
+            fprintf('采用 mvregress 输出 B（无截距）: a2=%.6g, b2=%.6g\n', a2, b2);
+        else
+            a2 = NaN; b2 = NaN; intercept = NaN;
+            warning('无法找到合适回归系数 B_ols 或 B，CWSSI_pre 将为 NaN。');
+        end
+    else
+        % 最后一招：用历史数据作简单线性回归 CWSSI ~ S_total + D_total
+        if exist('cwssi','var') && exist('S_total','var') && exist('D_total','var')
+            Xhist = [S_total, D_total, ones(length(S_total),1)];
+            beta_hist = Xhist \ cwssi;
+            a2 = beta_hist(1); b2 = beta_hist(2); intercept = beta_hist(3);
+            fprintf('用历史数据拟合得到 a2=%.6g, b2=%.6g, intercept=%.6g\n', a2, b2, intercept);
+        else
+            a2 = NaN; b2 = NaN; intercept = NaN;
+            warning('无法估计回归系数：缺少 cwssi/S_total/D_total。CWSSI_pre 会是 NaN。');
+        end
+    end
+end
+
+% 检查是否都已定义为数值
+if any(isnan([sy, ux, uw, a2, b2, intercept]))
+    warning('估计出的某些系数为 NaN，后续 CWSSI_pre/WS_pre 可能包含 NaN 值。');
+end
+
+
+
+% ④ 求未来 S_total, D_total
+S_total_f = X1_fut - sy * Y1_fut;
+D_total_f = -(ux * X1_fut + uw * Y1_fut);
+
+% ⑤ 用历史回归模型求未来 CWSSI
+CWSSI_pre = a2 .* S_total_f + b2 .* D_total_f + 0.5;
+CWSSI_pre = max(min(CWSSI_pre,1),0); % 限制 0~1
+
+% 供需比 WS = S_total / D_total （或 S_total - D_total，看你之前定义）
+WS_pre = S_total_f ./ D_total_f;
+
+fprintf("未来 20 年 CWSSI_pre 与 WS_pre 已生成。\n");
+plot_CWSSI_figures_full;
